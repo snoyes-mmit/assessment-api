@@ -1,0 +1,43 @@
+# ============================================================================
+# admin/.htaccess — Basic Auth + HTTPS enforcement for the assessment admin UI
+# ============================================================================
+#
+# This file protects the /admin/ directory on assessment-api.mmitnetwork.com.
+# It is intentionally narrow: HTTPS enforcement (same pattern as the API root)
+# plus a Basic Auth gate backed by a .htpasswd file stored OUTSIDE the document
+# root so the credential file itself cannot be served over HTTP.
+#
+# IMPORTANT: replace <cpuser> below with the actual cPanel account username
+# before deploying. See README-ADMIN.md for the htpasswd creation steps.
+# ----------------------------------------------------------------------------
+
+# ── Force HTTPS ──────────────────────────────────────────────────────────────
+# Mirrors the redirect rule on the API root so an admin who types
+# http://...../admin/ is upgraded to https before the Basic Auth prompt is
+# issued. Without this, the browser would send the Basic Auth header over
+# plaintext on the first request before the 301 reply.
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# ── Basic Auth ───────────────────────────────────────────────────────────────
+# The .htpasswd file lives outside public_html so it cannot be served as
+# static content. cPanel's "Directory Privacy" UI places files at this path
+# by convention; if you create the file manually via SSH, match this path.
+AuthType Basic
+AuthName "MMIT Assessment Admin"
+AuthUserFile "/home/<cpuser>/.htpasswds/admin/.htpasswd"
+Require valid-user
+
+# ── Hardening ────────────────────────────────────────────────────────────────
+# Deny direct browser access to the shared bootstrap include. Apache will
+# already refuse to serve dotfiles by default in most configurations, but
+# explicit is better than implicit for files containing DB credentials' include
+# path.
+<Files "_bootstrap.php">
+    Require all denied
+</Files>
+
+# Prevent directory listing if index.php is ever missing during a partial
+# deploy. Without this, mod_autoindex could enumerate the admin scripts.
+Options -Indexes
