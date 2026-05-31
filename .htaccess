@@ -1,0 +1,65 @@
+# ============================================================================
+# .htaccess — assessment-api.mmitnetwork.com document root
+#
+# Lives at: public_html/.htaccess  (when the subdomain points at public_html/)
+# OR at:    public_html/<subdomain-dir>/.htaccess  (when cPanel created a
+#           subdirectory for the subdomain). Either works — Apache reads the
+#           closest .htaccess to the request path.
+# ============================================================================
+
+# Disable directory indexes — never list api/ contents if there's no
+# DirectoryIndex.
+Options -Indexes
+
+# Force HTTPS for everything. cPanel's AutoSSL provisions a Let's Encrypt
+# cert for the subdomain; this rule kicks in once that cert is active.
+# HTTP_HOST keeps the scheme rewrite working across primary domain and
+# subdomain without hard-coding the hostname.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Some shared-Apache fronts strip the X-MMIT-Shared-Secret custom
+    # header during rewrites. Re-attach it to the environment so PHP
+    # sees it either as HTTP_X_MMIT_SHARED_SECRET or REDIRECT_…_SHARED_SECRET
+    # (the bootstrap accepts both).
+    RewriteCond %{HTTP:X-MMIT-Shared-Secret} (.+)
+    RewriteRule .* - [E=HTTP_X_MMIT_SHARED_SECRET:%1]
+
+    RewriteCond %{HTTPS} !=on
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# Strict-Transport-Security: tell browsers to refuse HTTP for a year. The
+# desktop client doesn't honor HSTS (it isn't a browser), but anyone
+# poking at the API in a browser benefits.
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" "expr=%{HTTPS} == 'on'"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# Block direct access to config/ — defense in depth even though the real
+# config lives outside public_html in production. If someone copies the
+# example file into config/config.php for local testing, we still don't
+# want it served.
+<IfModule mod_authz_core.c>
+    <DirectoryMatch "^.*/config(/|$)">
+        Require all denied
+    </DirectoryMatch>
+</IfModule>
+
+# Belt-and-braces: never serve any .sql or example config file even if
+# it ends up somewhere else under the docroot.
+<FilesMatch "\.(sql|example\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# Also block accidental access to the bootstrap by URL. Endpoints
+# `require` it from disk, so it never needs to be HTTP-reachable.
+<Files "_bootstrap.php">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</Files>
